@@ -1,0 +1,1 @@
+This is just here so git creates this folder. Everything else like the cloud-init files and the keys will be ignored.

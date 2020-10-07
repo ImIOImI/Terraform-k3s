@@ -1,0 +1,65 @@
+#cloud-config
+write_files:
+  - path: /root/configure.sh
+    content: |
+      #!/bin/bash
+      echo "====updating Ubuntu===="
+      DEBIAN_FRONTEND=noninteractive
+      sudo apt-get update -y
+      sudo apt-get upgrade -y
+      sudo apt-get install -y unzip
+
+      echo "====downloading awscli2===="
+      curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+      echo "====unzipping awscli2===="      
+      unzip -q awscliv2.zip
+      echo "====installing awscli2====" 
+      sudo ./aws/install
+      
+  - path: /root/k3sup-configure.sh
+    content: |
+      #!/bin/bash
+      echo "====setting up k3sup===="
+      data_con="${data_con}"
+      role=${role}
+      server_name_tag=${server_name_tag}
+      ip=$(hostname -I)
+
+      echo "======variables======"      
+      echo "data_con: $data_con"
+      echo "role: $role"
+      echo "server_name_tag: $server_name_tag"
+      echo "ip: $ip"
+      echo "======end variables======"
+
+      echo "====Downloading and Installing k3sup===="
+      curl -sLS https://get.k3sup.dev | sh
+      sudo install k3sup /usr/local/bin/
+
+      if [ $role = "server" ]
+      then
+        #set up a server
+        echo "====Installing K3s Server===="
+        k3sup install --local --context k3s --ssh-key "/root/.ssh/aws.pem" --datastore "$data_con"
+      else
+        #set up an agent
+        echo "====Installing K3s Agent===="
+        server_ip=$(aws ec2 describe-instances --filters Name=tag:Name,Values=k3s-server Name=instance-state-name,Values=running --query "Reservations[*].Instances[*].NetworkInterfaces[*].PrivateIpAddress[]" --output text)
+        echo "server_ip: $server_ip"
+        k3sup join --user ubuntu --server-ip $server_ip --ip $ip --ssh-key "/root/.ssh/aws.pem"
+      fi 
+      echo "====k3sup setup done===="
+  - path: /root/.ssh/aws.pem
+    content: |
+      ${private-ssh-key}
+    permissions: '0600'
+    owner: root:root
+  - path: /ubuntu/.ssh/aws.pem
+    content: |
+      ${private-ssh-key}
+    permissions: '0600'
+    owner: ubuntu:ubuntu
+runcmd:
+  - bash /root/configure.sh
+  - sleep 1
+  - bash /root/k3sup-configure.sh
